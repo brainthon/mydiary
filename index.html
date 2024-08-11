@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>나만의 일기</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
+    <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+    <style>
+        body {
+            padding: 20px;
+        }
+        .card {
+            margin-top: 10px;
+            position: relative;
+        }
+        .delete-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1 class="text-center mb-4">나만의 일기</h1>
+
+        <!-- 일기 작성 폼 -->
+        <div class="mb-3">
+            <label for="diaryTitle" class="form-label">제목</label>
+            <input type="text" class="form-control" id="diaryTitle" placeholder="일기 제목을 입력하세요">
+        </div>
+        <div class="mb-3">
+            <label for="diaryContent" class="form-label">내용</label>
+            <div id="diaryContent" class="form-control" style="height: 200px;"></div>
+        </div>
+        <button class="btn btn-primary" id="saveButton">저장</button>
+
+        <!-- 저장된 일기 목록 -->
+        <div id="diaryList" class="mt-4"></div>
+    </div>
+
+    <!-- 스크립트 로드 순서 조정 -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
+
+    <!-- Firebase SDK and Firestore -->
+    <script type="module">
+        // Firebase 모듈 및 Firestore 가져오기
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+        // Firebase 구성 및 초기화
+        const firebaseConfig = {
+            apiKey: "AIzaSyCFSvW2F-qG9f8opWYo5Q3570I-ARHzN9Y",
+            authDomain: "mydiary-edf79.firebaseapp.com",
+            projectId: "mydiary-edf79",
+            storageBucket: "mydiary-edf79.appspot.com",
+            messagingSenderId: "517169265201",
+            appId: "1:517169265201:web:4b2f8d458822639ad8f310"
+        };
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // WYSIWYG 에디터 초기화
+        const quill = new Quill('#diaryContent', {
+            theme: 'snow'
+        });
+
+        // 일기 저장 버튼 클릭 이벤트
+        document.getElementById('saveButton').addEventListener('click', async function() {
+            const title = document.getElementById('diaryTitle').value;
+            const content = quill.root.innerHTML;
+            const date = new Date().toLocaleDateString();
+
+            if (title === "" || content === "<p><br></p>") {
+                Swal.fire('경고', '제목과 내용을 입력해주세요!', 'warning');
+                return;
+            }
+
+            // Firestore에 일기 데이터 저장
+            try {
+                await addDoc(collection(db, "diaryEntries"), {
+                    title: title,
+                    content: content,
+                    date: date
+                });
+
+                Swal.fire('성공', '일기가 저장되었습니다.', 'success');
+                loadDiaryEntries();
+            } catch (error) {
+                Swal.fire('에러', '일기를 저장하는 중 오류가 발생했습니다.', 'error');
+            }
+
+            // 입력창 초기화
+            document.getElementById('diaryTitle').value = "";
+            quill.root.innerHTML = "";
+        });
+
+        // Firestore에서 일기 목록 불러오기
+        async function loadDiaryEntries() {
+            const querySnapshot = await getDocs(collection(db, "diaryEntries"));
+            const diaryEntries = [];
+            querySnapshot.forEach((doc) => {
+                diaryEntries.push({ id: doc.id, ...doc.data() });
+            });
+
+            updateDiaryList(diaryEntries);
+        }
+
+        // 일기 목록 업데이트 함수
+        function updateDiaryList(diaryEntries) {
+            const diaryList = document.getElementById('diaryList');
+            diaryList.innerHTML = "";
+
+            diaryEntries.forEach(function(entry) {
+                const card = document.createElement('div');
+                card.classList.add('card');
+                card.innerHTML = `
+                    <div class="card-body">
+                        <h5 class="card-title">${entry.title}</h5>
+                        <p class="card-text">${entry.date}</p>
+                        <span class="delete-btn text-danger">🗑️ 삭제</span>
+                    </div>
+                `;
+
+                // 카드 클릭 이벤트 - 일기 내용 보기
+                card.querySelector('.card-title').addEventListener('click', function() {
+                    Swal.fire({
+                        title: entry.title,
+                        html: entry.content,
+                        confirmButtonText: '닫기'
+                    });
+                });
+
+                // 삭제 버튼 클릭 이벤트 - 일기 삭제
+                card.querySelector('.delete-btn').addEventListener('click', async function() {
+                    try {
+                        await deleteDoc(doc(db, "diaryEntries", entry.id));
+                        Swal.fire('삭제 완료', '일기가 삭제되었습니다.', 'success');
+                        loadDiaryEntries();
+                    } catch (error) {
+                        Swal.fire('에러', '일기를 삭제하는 중 오류가 발생했습니다.', 'error');
+                    }
+                });
+
+                diaryList.appendChild(card);
+            });
+        }
+
+        // 페이지 로드 시 일기 목록 불러오기
+        loadDiaryEntries();
+    </script>
+</body>
+</html>
